@@ -52,12 +52,14 @@ class ThreeLayerConvNet(object):
         self.params['W1'] = weight_scale * np.random.randn(num_filters, C, filter_size, filter_size)
         self.params['b1'] = np.zeros(num_filters)
 
-        self.params['gamma1'] = np.ones(layers_dims[i + 1])
-        self.params['beta1'] = np.zeros(layers_dims[i + 1])
-
         conv_height, conv_width, conv_stride, conv_pad = filter_size, filter_size, 1, (filter_size - 1) // 2
         pool_height, pool_width, pool_stride = 2, 2, 2
         H2, W2 = int(1 + (H + 2 * conv_pad - conv_height) / conv_stride), int(1 + (W + 2 * conv_pad - conv_width) / conv_stride)
+
+        self.bn_param = {'mode': 'train'}
+        self.params['gamma1'] = np.ones(num_filters)
+        self.params['beta1'] = np.zeros(num_filters)
+
         H3, W3 = int((H2-pool_height)/pool_stride+1), int((W2-pool_width)/pool_stride+1)
 
         self.params['W2'] = weight_scale * np.random.randn(num_filters*H3*W3, hidden_dim)
@@ -96,6 +98,8 @@ class ThreeLayerConvNet(object):
         # computing the class scores for X and storing them in the scores          #
         # variable.                                                                #
         ############################################################################
+        gamma, beta, bn_param = self.params['gamma1'], self.params['beta1'], self.bn_param
+
         scores, cache_l1 = conv_bn_relu_forward(X, W1, b1, gamma, beta, conv_param, bn_param)
         scores, cache_l2 = max_pool_forward_fast(scores, pool_param)
         scores, cache_l3 = affine_relu_forward(scores, W2, b2)
@@ -116,9 +120,10 @@ class ThreeLayerConvNet(object):
         ############################################################################
         loss, dout = softmax_loss(scores, y)
 
-        dout, dW3, db3 = affine_backward(dout, cache_l3)
-        dout, dW2, db2 = affine_relu_backward(dout, cache_l2)
-        dout, dW1, db1 = conv_relu_pool_backward(dout, cache_l1)
+        dout, dW3, db3 = affine_backward(dout, cache_l4)
+        dout, dW2, db2 = affine_relu_backward(dout, cache_l3)
+        dout = max_pool_backward_fast(dout, cache_l2)
+        dout, dW1, db1, dgamma1, dbeta1 = conv_bn_relu_backward(dout, cache_l1)
 
         dW1 += self.reg * W1
         dW2 += self.reg * W2
@@ -127,6 +132,7 @@ class ThreeLayerConvNet(object):
         grads['W1'], grads['b1'] = dW1, db1
         grads['W2'], grads['b2'] = dW2, db2
         grads['W3'], grads['b3'] = dW3, db3
+        grads['gamma1'], grads['beta1'] = dgamma1, dbeta1
 
         loss += 0.5 * self.reg * (np.sum(W1*W1) + np.sum(W2*W2) + np.sum(W3*W3))
         ############################################################################
